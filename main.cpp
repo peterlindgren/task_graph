@@ -234,11 +234,11 @@ int safe_main() {
 		printf("task functions:\n");
 
 		int va, vb, vc, vd, ve;
-		TaskFn a([&]() { va = 2; printf("  a=%d\n", va); });
-		TaskFn b([&]() { vb = 3; printf("  b=%d\n", vb); });
-		TaskFn c([&]() { vc = va * vb; printf("  c=%d*%d=%d\n", va, vb, vc); }, a, b);
-		TaskFn d([&]() { vd = va * va; printf("  d=%d*%d=%d\n", va, va, vd); }, a);
-		TaskFn e([&]() { ve = vc * vd; printf("  e=%d*%d=%d\n", vc, vd, ve); }, c, d);
+		auto a = make_task_fn([&]() { va = 2; printf("  a=%d\n", va); });
+		auto b = make_task_fn([&]() { vb = 3; printf("  b=%d\n", vb); });
+		auto c = make_task_fn([&]() { vc = va * vb; printf("  c=%d*%d=%d\n", va, vb, vc); }, a, b);
+		auto d = make_task_fn([&]() { vd = va * va; printf("  d=%d*%d=%d\n", va, va, vd); }, a);
+		auto e = make_task_fn([&]() { ve = vc * vd; printf("  e=%d*%d=%d\n", vc, vd, ve); }, c, d);
 
 		TaskGraph g(a, b, c, d, e);
 		g.submit(pool);
@@ -275,7 +275,7 @@ int safe_main() {
 	}
 
 	free(mem);
-	return 1;
+	return 0;
 }
 
 int main() {

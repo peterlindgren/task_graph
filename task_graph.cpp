@@ -3,6 +3,7 @@
 #include "stack_allocator.h"
 
 #include <set>
+#include <algorithm>
 
 template<typename T>
 using StackSet = std::set<T, std::less<T>, StackAllocator<T>>;

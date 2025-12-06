@@ -2,7 +2,7 @@
 
 A minimal C++ task graph experiment exploring low-boilerplate task authoring with compile-time dependency declaration.
 
-Currently requires C++17 support.
+Currently requires C++11 support.
 
 ## Usage
 

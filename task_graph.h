@@ -3,7 +3,8 @@
 #include <atomic>
 #include <tuple>
 #include <vector>
-#include <functional>
+#include <type_traits>
+#include <utility>
 
 struct TaskBase;
 
@@ -37,8 +38,7 @@ struct TaskGraph
 	std::vector<TaskBase *> tasks;
 	TaskGraphFence fence;
 
-	template<typename... Tasks,
-		typename = std::enable_if_t<(std::is_base_of_v<TaskBase, std::remove_reference_t<Tasks>> && ...)>>
+	template<typename... Tasks>
 	TaskGraph(Tasks&... t) : tasks() , fence()
 	{
 		tasks.reserve((unsigned)sizeof...(Tasks));
@@ -79,7 +79,7 @@ struct Task : TaskBase
 	}
 
 	template<unsigned N>
-	auto input() -> decltype(get<N>(in)) { return get<N>(in); }
+	auto input() -> decltype(std::get<N>(in)) { return std::get<N>(in); }
 };
 
 template<>
@@ -110,7 +110,10 @@ struct TaskFn : TaskBase
 };
 
 template<typename F, typename... Deps>
-TaskFn(F, Deps&...) -> TaskFn<F, Deps...>;
+TaskFn<F, Deps...> make_task_fn(F f, Deps&...d)
+{
+	return TaskFn<F, Deps...>(std::move(f), d...);
+}
 
 // Task slicing interface
 
@@ -169,9 +172,9 @@ struct TaskSlice : TaskBase
 
 template<typename R, typename T, typename F>
 auto slice(unsigned count, T *data, F &&f, SliceSettings s = {})
-	-> std::vector<TaskSlice<T, R, std::decay_t<F>>>
+	-> std::vector<TaskSlice<T, R, typename std::decay<F>::type>>
 {
-	using Task = TaskSlice<T, R, std::decay_t<F>>;
+	using Task = TaskSlice<T, R, typename std::decay<F>::type>;
 	std::vector<Task> tasks;
 	unsigned n = num_chunks(count, s);
 	tasks.reserve(n);
