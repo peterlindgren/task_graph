@@ -71,6 +71,11 @@ struct ThreadPool : public Bikeshed_ReadyCallback, public ThreadPoolInterface
 		threads.clear();
 	}
 
+	unsigned num_threads() const
+	{
+		return (unsigned)threads.size();
+	}
+
 	static DWORD WINAPI worker_entry(LPVOID param)
 	{
 		ThreadPool *pool = (ThreadPool *)param;
@@ -163,7 +168,7 @@ int safe_main() {
 			int value;
 			a(int i) : value(i) {}
 			virtual void operator()() override {
-				printf("a=%d\n", value); fflush(stdout);
+				printf("  a=%d\n", value); fflush(stdout);
 			}
 		};
 
@@ -172,7 +177,7 @@ int safe_main() {
 			int value;
 			b(int i) : value(i) {}
 			virtual void operator()() override {
-				printf("b=%d\n", value); fflush(stdout);
+				printf("  b=%d\n", value); fflush(stdout);
 			}
 		};
 
@@ -184,7 +189,7 @@ int safe_main() {
 				a &a = std::get<0>(in);
 				b &b = std::get<1>(in);
 				value = a.value * b.value;
-				printf("c=%d*%d=%d\n", a.value, b.value, value);
+				printf("  c=%d*%d=%d\n", a.value, b.value, value);
 			}
 		};
 
@@ -196,7 +201,7 @@ int safe_main() {
 				struct a &a1 = std::get<0>(in);
 				struct a &a2 = std::get<1>(in);
 				value = a1.value * a2.value;
-				printf("d=%d*%d=%d\n", a1.value, a2.value, value);
+				printf("  d=%d*%d=%d\n", a1.value, a2.value, value);
 			}
 		};
 
@@ -208,7 +213,7 @@ int safe_main() {
 				c &c = std::get<0>(in);
 				d &d = std::get<1>(in);
 				value = c.value * d.value;
-				printf("e=%d*%d=%d\n", c.value, d.value, value);
+				printf("  e=%d*%d=%d\n", c.value, d.value, value);
 			}
 		};
 
@@ -222,24 +227,51 @@ int safe_main() {
 		g.submit(pool);
 		g.wait(pool);
 
-		printf("result: %d\n", e.value);
+		printf("  result: %d\n", e.value);
 	}
 
 	{
 		printf("task functions:\n");
 
 		int va, vb, vc, vd, ve;
-		TaskFn a([&]() { va = 2; printf("a=%d\n", va); });
-		TaskFn b([&]() { vb = 3; printf("b=%d\n", vb); });
-		TaskFn c([&]() { vc = va * vb; printf("c=%d*%d=%d\n", va, vb, vc); }, a, b);
-		TaskFn d([&]() { vd = va * va; printf("d=%d*%d=%d\n", va, va, vd); }, a);
-		TaskFn e([&]() { ve = vc * vd; printf("e=%d*%d=%d\n", vc, vd, ve); }, c, d);
+		TaskFn a([&]() { va = 2; printf("  a=%d\n", va); });
+		TaskFn b([&]() { vb = 3; printf("  b=%d\n", vb); });
+		TaskFn c([&]() { vc = va * vb; printf("  c=%d*%d=%d\n", va, vb, vc); }, a, b);
+		TaskFn d([&]() { vd = va * va; printf("  d=%d*%d=%d\n", va, va, vd); }, a);
+		TaskFn e([&]() { ve = vc * vd; printf("  e=%d*%d=%d\n", vc, vd, ve); }, c, d);
 
 		TaskGraph g(a, b, c, d, e);
 		g.submit(pool);
 		g.wait(pool);
 
-		printf("result: %d\n", ve);
+		printf("  result: %d\n", ve);
+	}
+
+	{
+		printf("task slicing:\n");
+
+		std::vector<uint32_t> data = {
+			0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7,
+			0x8, 0x9, 0xa, 0xb, 0xc, 0xd, 0xe,
+		};
+
+		auto tasks = slice<uint32_t>(data.size(), data.data(), [](Slice<uint32_t, uint32_t> s) {
+			uint32_t result = 0;
+			for (unsigned i = 0; i < s.count; ++i)
+				result += s.data[i];
+			s.result = result;
+			printf("  summed: %u %u\n", s.count, result);
+		}, { pool.num_threads(), 1, 1 });
+
+		TaskGraph g(tasks);
+		g.submit(pool);
+		g.wait(pool);
+
+		uint32_t result = 0;
+		for (auto &t : tasks)
+			result += t.result;
+
+		printf("  result: %u\n", result);
 	}
 
 	free(mem);

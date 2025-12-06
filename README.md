@@ -2,6 +2,8 @@
 
 A minimal C++ task graph experiment exploring low-boilerplate task authoring with compile-time dependency declaration.
 
+Currently requires C++17 support.
+
 ## Usage
 
 Define tasks by inheriting from `Task<Dependencies...>`:

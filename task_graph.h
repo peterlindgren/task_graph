@@ -20,8 +20,8 @@ struct ThreadPoolInterface
 struct TaskBase
 {
 	TaskBase **inputs;
-	unsigned count;
-	TaskBase() : inputs(nullptr), count(0) {}
+	unsigned num_inputs;
+	TaskBase() : inputs(nullptr), num_inputs(0) {}
 	virtual ~TaskBase() = default;
 	virtual void operator()() = 0;
 };
@@ -37,7 +37,8 @@ struct TaskGraph
 	std::vector<TaskBase *> tasks;
 	TaskGraphFence fence;
 
-	template<typename... Tasks>
+	template<typename... Tasks,
+		typename = std::enable_if_t<(std::is_base_of_v<TaskBase, std::remove_reference_t<Tasks>> && ...)>>
 	TaskGraph(Tasks&... t) : tasks() , fence()
 	{
 		tasks.reserve((unsigned)sizeof...(Tasks));
@@ -47,9 +48,19 @@ struct TaskGraph
 
 	TaskGraph(const std::vector<TaskBase *> &ts) : tasks(ts), fence() { }
 
+	template<typename T>
+	TaskGraph(std::vector<T> &ts) : tasks(), fence()
+	{
+		tasks.reserve(ts.size());
+		for (auto &t : ts)
+			tasks.push_back(static_cast<TaskBase *>(&t));
+	}
+
 	void submit(ThreadPoolInterface &pool);
 	void wait(ThreadPoolInterface &pool);
 };
+
+// Task function object interface
 
 template<typename... Deps>
 struct Task : TaskBase
@@ -64,7 +75,7 @@ struct Task : TaskBase
 		int dummy[] = {0, (storage[i++] = static_cast<TaskBase *>(&d), 0)...};
 		(void)dummy;
 		inputs = storage;
-		count = NUM_DEPS;
+		num_inputs = NUM_DEPS;
 	}
 
 	template<unsigned N>
@@ -76,6 +87,8 @@ struct Task<> : TaskBase
 {
 	Task() {}
 };
+
+// Task function interface
 
 template<typename F, typename... Deps>
 struct TaskFn : TaskBase
@@ -90,7 +103,7 @@ struct TaskFn : TaskBase
 		int dummy[] = {0, (storage[i++] = static_cast<TaskBase *>(&d), 0)...};
 		(void)dummy;
 		inputs = storage;
-		count = sizeof...(Deps);
+		num_inputs = sizeof...(Deps);
 	}
 
 	virtual void operator()() override { func(); }
@@ -98,3 +111,75 @@ struct TaskFn : TaskBase
 
 template<typename F, typename... Deps>
 TaskFn(F, Deps&...) -> TaskFn<F, Deps...>;
+
+// Task slicing interface
+
+struct SliceSettings
+{
+	unsigned max_chunks = 20;
+	unsigned min_chunk_size = 1;
+	unsigned alignment = 1;
+};
+
+inline unsigned chunk_size(unsigned count, const SliceSettings &s)
+{
+	unsigned size = 0;
+	if (s.max_chunks)
+		size = (count + s.max_chunks - 1) / s.max_chunks;
+	if (size < s.min_chunk_size)
+		size = s.min_chunk_size;
+	if (size > count)
+		size = count;
+	if (s.alignment > 1)
+		size = (size + s.alignment - 1) & ~(s.alignment - 1);
+	return size;
+}
+
+inline unsigned num_chunks(unsigned count, const SliceSettings &s)
+{
+	if (count == 0)
+		return 0;
+	unsigned cs = chunk_size(count, s);
+	return (count + cs - 1) / cs;
+}
+
+template<typename T, typename R>
+struct Slice
+{
+	T *data;
+	R &result;
+	unsigned count;
+};
+
+template<typename T, typename R, typename F>
+struct TaskSlice : TaskBase
+{
+	F func;
+	T *data;
+	unsigned count;
+	R result{};
+
+	TaskSlice(F f, T *d, unsigned c)
+		: func(std::move(f)), data(d), count(c) {}
+
+	virtual void operator()() override {
+		func(Slice<T, R>{data, result, count});
+	}
+};
+
+template<typename R, typename T, typename F>
+auto slice(unsigned count, T *data, F &&f, SliceSettings s = {})
+	-> std::vector<TaskSlice<T, R, std::decay_t<F>>>
+{
+	using Task = TaskSlice<T, R, std::decay_t<F>>;
+	std::vector<Task> tasks;
+	unsigned n = num_chunks(count, s);
+	tasks.reserve(n);
+	for (unsigned i = 0; i < n; ++i) {
+		unsigned cs = chunk_size(count, s);
+		unsigned off = cs * i;
+		unsigned len = (off + cs > count) ? count - off : cs;
+		tasks.emplace_back(std::forward<F>(f), data + off, len);
+	}
+	return tasks;
+}

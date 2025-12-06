@@ -29,13 +29,13 @@ void TaskGraph::submit(ThreadPoolInterface &pool)
 	for (unsigned i = 0; i < tasks.size(); ++i) {
 		TaskBase *t = tasks[i];
 
-		if (t->count == 0) {
+		if (t->num_inputs == 0) {
 			roots.push_back(ids[i]);
 			continue;
 		}
 
 		std::vector<uint32_t> deps;
-		for (unsigned j = 0; j < t->count; ++j) {
+		for (unsigned j = 0; j < t->num_inputs; ++j) {
 			TaskBase *dep  = t->inputs[j];
 			auto it = std::find(tasks.begin(), tasks.end(), dep);
 			unsigned dep_idx = std::distance(tasks.begin(), it);
