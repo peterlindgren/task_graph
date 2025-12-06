@@ -3,6 +3,7 @@
 #include <atomic>
 #include <tuple>
 #include <vector>
+#include <functional>
 
 struct TaskBase;
 
@@ -50,14 +51,14 @@ struct TaskGraph
 	void wait(ThreadPoolInterface &pool);
 };
 
-template<typename... Ts>
+template<typename... Deps>
 struct Task : TaskBase
 {
-	enum { NUM_DEPS = sizeof...(Ts) };
+	enum { NUM_DEPS = sizeof...(Deps) };
 	TaskBase *storage[NUM_DEPS];
-	std::tuple<Ts&...> in;
+	std::tuple<Deps&...> in;
 
-	Task(Ts&... d) : in(d...)
+	Task(Deps&... d) : in(d...)
 	{
 		unsigned i = 0;
 		int dummy[] = {0, (storage[i++] = static_cast<TaskBase *>(&d), 0)...};
@@ -75,3 +76,25 @@ struct Task<> : TaskBase
 {
 	Task() {}
 };
+
+template<typename F, typename... Deps>
+struct TaskFn : TaskBase
+{
+	enum { NUM_DEPS = sizeof...(Deps) > 0 ? sizeof...(Deps) : 1 };
+	F func;
+	TaskBase *storage[NUM_DEPS];
+
+	TaskFn(F f, Deps&... d) : func(std::move(f))
+	{
+		unsigned i = 0;
+		int dummy[] = {0, (storage[i++] = static_cast<TaskBase *>(&d), 0)...};
+		(void)dummy;
+		inputs = storage;
+		count = sizeof...(Deps);
+	}
+
+	virtual void operator()() override { func(); }
+};
+
+template<typename F, typename... Deps>
+TaskFn(F, Deps&...) -> TaskFn<F, Deps...>;

@@ -4,10 +4,10 @@
 
 #include <set>
 
-template <typename T>
+template<typename T>
 using StackSet = std::set<T, std::less<T>, StackAllocator<T>>;
 
-template <typename T>
+template<typename T>
 using StackVector = std::vector<T, StackAllocator<T>>;
 
 void TaskGraph::submit(ThreadPoolInterface &pool)

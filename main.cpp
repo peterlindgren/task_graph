@@ -142,55 +142,6 @@ struct ThreadPool : public Bikeshed_ReadyCallback, public ThreadPoolInterface
 	}
 };
 
-struct a : Task<> {
-	int value;
-	a(int i) : value(i) {}
-	virtual void operator()() override {
-		printf("a=%d\n", value); fflush(stdout);
-	}
-};
-
-struct b : Task<>  {
-	int value;
-	b(int i) : value(i) {}
-	virtual void operator()() override {
-		printf("b=%d\n", value); fflush(stdout);
-	}
-};
-
-struct c : Task<a, b>  {
-	using Task::Task;
-	int value;
-	virtual void operator()() override {
-		a &a = std::get<0>(in);
-		b &b = std::get<1>(in);
-		value = a.value * b.value;
-		printf("c=%d*%d=%d\n", a.value, b.value, value); fflush(stdout);
-	}
-};
-
-struct d : Task<a, a>  {
-	using Task::Task;
-	int value;
-	virtual void operator()() override {
-		struct a &a1 = std::get<0>(in);
-		struct a &a2 = std::get<1>(in);
-		value = a1.value * a2.value;
-		printf("d=%d*%d=%d\n", a1.value, a2.value, value); fflush(stdout);
-	}
-};
-
-struct e : Task<c, d>  {
-	using Task::Task;
-	int value;
-	virtual void operator()() override {
-		c &c = std::get<0>(in);
-		d &d = std::get<1>(in);
-		value = c.value * d.value;
-		printf("e=%d*%d=%d\n", c.value, d.value, value); fflush(stdout);
-	}
-};
-
 int safe_main() {
 	const unsigned bytes = BIKESHED_SIZE(MAX_TASKS, MAX_DEPENDENCIES, 1);
 	void *mem = malloc(bytes);
@@ -204,21 +155,92 @@ int safe_main() {
 
 	DEBUG_PRINTF("ThreadPool: %u threads", (unsigned)pool.threads.size());
 
-	struct a a(2);
-	struct b b(3);
-	struct c c(a, b);
-	struct d d(a, a);
-	struct e e(c, d);
+	{
+		printf("task function objects:\n");
 
-	struct TaskGraph g(a, b, c, d, e);
-	g.submit(pool);
-	g.wait(pool);
+		struct a : Task<>
+		{
+			int value;
+			a(int i) : value(i) {}
+			virtual void operator()() override {
+				printf("a=%d\n", value); fflush(stdout);
+			}
+		};
 
-	printf("result: %d\n", e.value);
+		struct b : Task<>
+		{
+			int value;
+			b(int i) : value(i) {}
+			virtual void operator()() override {
+				printf("b=%d\n", value); fflush(stdout);
+			}
+		};
 
-	// SR_SEMAPHORE_WAIT(*thread.semaphore);
-	// while(thread.pool->do_work()) ;
-	// Bikeshed_ExecuteOne(shed, 0);
+		struct c : Task<a, b>
+		{
+			using Task::Task;
+			int value;
+			virtual void operator()() override {
+				a &a = std::get<0>(in);
+				b &b = std::get<1>(in);
+				value = a.value * b.value;
+				printf("c=%d*%d=%d\n", a.value, b.value, value);
+			}
+		};
+
+		struct d : Task<a, a>
+		{
+			using Task::Task;
+			int value;
+			virtual void operator()() override {
+				struct a &a1 = std::get<0>(in);
+				struct a &a2 = std::get<1>(in);
+				value = a1.value * a2.value;
+				printf("d=%d*%d=%d\n", a1.value, a2.value, value);
+			}
+		};
+
+		struct e : Task<c, d>
+		{
+			using Task::Task;
+			int value;
+			virtual void operator()() override {
+				c &c = std::get<0>(in);
+				d &d = std::get<1>(in);
+				value = c.value * d.value;
+				printf("e=%d*%d=%d\n", c.value, d.value, value);
+			}
+		};
+
+		struct a a(2);
+		struct b b(3);
+		struct c c(a, b);
+		struct d d(a, a);
+		struct e e(c, d);
+
+		TaskGraph g(a, b, c, d, e);
+		g.submit(pool);
+		g.wait(pool);
+
+		printf("result: %d\n", e.value);
+	}
+
+	{
+		printf("task functions:\n");
+
+		int va, vb, vc, vd, ve;
+		TaskFn a([&]() { va = 2; printf("a=%d\n", va); });
+		TaskFn b([&]() { vb = 3; printf("b=%d\n", vb); });
+		TaskFn c([&]() { vc = va * vb; printf("c=%d*%d=%d\n", va, vb, vc); }, a, b);
+		TaskFn d([&]() { vd = va * va; printf("d=%d*%d=%d\n", va, va, vd); }, a);
+		TaskFn e([&]() { ve = vc * vd; printf("e=%d*%d=%d\n", vc, vd, ve); }, c, d);
+
+		TaskGraph g(a, b, c, d, e);
+		g.submit(pool);
+		g.wait(pool);
+
+		printf("result: %d\n", ve);
+	}
 
 	free(mem);
 	return 1;
